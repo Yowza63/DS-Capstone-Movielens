@@ -1,0 +1,17 @@
+# .gitignore for DS-Capstone-Movielens
+# Files to exclude from git 
+# Becky Johnson / Github - Yowza63
+
+# R files
+.Rproj.user
+.Ruserdata
+.Rhistory
+.RData
+*.Rproj
+
+# Data files which are large and can be recreated using the DS-Capstone-Movielens-Data.R file
+*.rds
+ml-10M100K/
+
+# Test files
+test*.*
