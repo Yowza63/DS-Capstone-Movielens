@@ -1,0 +1,337 @@
+---
+title: "MovieLens Ratings Prediction Project Report"
+author: "Becky Johnson"
+date: "1/22/2021"
+    
+output: 
+  html_document:
+    theme: united
+    highlight: tango
+    number_sections: TRUE
+    toc: TRUE
+    toc_float: TRUE
+    includes:
+      after_body: footer.Rhtml
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(caret)
+library(stringi)
+library(kableExtra)
+
+```
+
+# Problem Statement: Build a model to predict how a particular movie viewer will rate a specific movie
+Create a model to predict the rating a specific user will assign to a specific movie. From this we can use the movies with high predicted ratings for a specific user to create recommendations of movies that user is likely to enjoy. 
+
+# Project Overview
+This project will build a predictive model to guess the rating a user will assign to a specific movie. We will start with gathering the MovieLens data, creating a training data set to fit our model, and a testing or validation data set to measure the effectiveness of the model. The predictive model will use machine learning techniques to fit the best model.
+
+## Data needed to answer the question. This section describes the code in 0_MovieLens_Data_Wrangling.R
+We start with the 10M MovieLens dataset available on the Grouplens.org site maintained by the University of Minnesota. This database includes 10 million ratings and 100,000 tag applications applied to 10,000 movies by 72,000 users. It was released 1/2009. 
+
+The README.txt for this dataset is found here:
+http://files.grouplens.org/datasets/movielens/ml-10m-README.html
+
+The data can be found here:
+https://grouplens.org/datasets/movielens/10m/
+
+Citation for dataset:  F. Maxwell Harper and Joseph A. Konstan. 2015. The MovieLens Datasets: History and Context. ACM Transactions on Interactive Intelligent Systems (TiiS) 5, 4, Article 19 (December 2015), 19 pages. DOI=http://dx.doi.org/10.1145/2827872
+
+## Create the dataframes for training and validation 
+We first created the movielens dataframe with columns "userId", "movieId", "rating", "timestamp", "title", "genres"
+We then randomly split the data into a 90% training set (edx) and a 10% validation set (validation). 
+
+Read in the training dataset, edx, created using the file '0_MovieLens_Data_Wrangling.R' and start to explore this data.
+```{r import-data}
+edx <- readRDS("movielens_training_data.rds")
+validation <- readRDS("movielens_validation_data.rds")
+```
+
+## Explore the training dataset
+There are `r nrow(edx)` rows and `r ncol(edx)` columns in the data. 
+
+The summary function shows the range for each variable (these are the columns), the min, max, and mean.
+```{r summary-of-training-data}
+summary(edx)
+```
+
+The source data is in tidy format with each row representing a rating assigned by a single user to a single movie.
+```{r show-as-tidy}
+edx %>% as_tibble()
+```
+
+## Data values
+* **edx$userID** - an integer vector with `r n_distinct(edx$userId)` distinct values. There are `r sum(is.na(edx$userId))` NA values in the vector
+* **edx$movieId** - a numeric vector with `r n_distinct(edx$movieId)` distinct values. There are `r sum(is.na(edx$movieId))` NA values in the vector
+* **edx$rating** - a numeric vector with `r n_distinct(edx$rating)` distinct values. There are `r sum(is.na(edx$rating))` NA values in the vector
+* **edx$timestamp** - an integer vector showing the time the rating was assigned. The values are seconds since midnight Coordinated Universal Time (UTC) of January 1, 1970
+* **edx$title** - a character vector showing the movie titles. These are not necessarily unique so we should rely on movieId which is unique
+* **edx$genres** - a character vector showing the various movie genres. There are `r n_distinct(edx$genres)` distinct values in the vector. 
+
+To find the unique genres requires splitting the fields into one vector and then using unique() to find the distinct values.
+
+```{r create-list-of-genres}
+
+Genres <- str_split(edx$genres, "\\|") %>% flatten_chr() %>% stri_unique()
+
+```
+
+
+```{r find-genre-frequency}
+
+sapply(Genres, function(g) {
+  sum(str_detect(edx$genres, g))
+  }) %>% 
+  sort(decreasing = TRUE) %>%
+  head(8) %>%
+  knitr::kable(., "simple", col.names = "Number of Ratings", format.args = list(big.mark = ","))
+
+```
+* **edx$year** - This field was added in the data wrangling file by extracting the year the rating was created. The range of values are found by using the range() function in r.
+```{r}
+range(edx$year)
+```
+* **edx$release_year** - The year the movie was released. 
+```{r}
+range(edx$release_year)
+```
+
+## Explore the data and the relationship between values
+How many movies to user's typically rate? Is that normally distributed?
+
+On average, each user rates 129 movies. 
+```{r average-movies-rated-per-user, include=FALSE}
+
+length(edx$rating)/n_distinct(edx$userId)
+
+```
+
+The number of movies rated per user is right skewed distribution with ~65% of users rating 10 or fewer movies. There are a few number of users (~5%) rating 50 or more movies.
+
+```{r create a histogram for the number of movies rated by each user}
+
+edx %>% group_by(userId) %>% summarize(n = n()) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(binwidth = 5, fill = "blue", col = "black") + 
+  xlab("Number of Movies Rated") +
+  ylab("Number of Users") + 
+  labs(title = "Number of Movies Rated by Each User")
+
+```
+
+
+```{r show the histgram again but exclude the users with over 50 ratings}
+
+edx %>% group_by(userId) %>% summarize(n = n()) %>% 
+  filter(n <= 50) %>%
+  ggplot(aes(n)) + 
+  geom_histogram(binwidth = 5, fill = "blue", col = "black") + 
+  xlab("Number of Movies Rated") + 
+  ylab("Number of Users") + 
+  labs(title = "Number of Movies Rated by Each User", subtitle = "Excludes Users with over 50 Ratings")
+  
+```
+
+Most users rate only a small fraction of the number of movies in the dataset. On average, each user is rating around 1% of the total population movies. To show this graphically, we can look at a matrix of a random sample of 100 users to show how sparse the matrix is of movies rated by users. Note: This chart was part of the HarvardX: PH125.8x Machine Learning course materials.
+
+```{r graph-sample-100userIds-moviesrated, fig.cap="Source: HarvardX: PH125.8x course materials"}
+
+users <- sample(unique(edx$userId), 100)
+rafalib::mypar()
+edx %>% filter(userId %in% users) %>% 
+  select(userId, movieId, rating) %>%
+  mutate(rating = 1) %>%
+  spread(movieId, rating) %>% select(sample(ncol(.), 100)) %>% 
+  as.matrix() %>% t(.) %>%
+  image(1:100, 1:100,. , xlab="Movies", ylab="Users")
+abline(h=0:100+0.5, v=0:100+0.5, col = "grey")
+
+```
+
+Next, let's look at the movies and how often they are rated and correlation between the number of times a movie is rated and the average ratings. The plot shows a slight bias. Then the correlation coefficient of .22 confirms a slight positive correlation between how often a movie is rated and it's average. It makes sense given that good movies are watched more frequently and thus rated more frequently.
+
+```{r avg_rating_by_number_of_ratings}
+
+edx %>% 
+  group_by(movieId) %>% 
+  summarize(n = n(), avg_rating = sum(rating)/n) %>%
+  filter(n >= 100) %>%
+  ggplot(aes(avg_rating, n)) + geom_point()
+
+```
+
+```{r correlation_num_ratings_and_avg_rating}
+
+tmp <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(n = n(), avg_rating = sum(rating)/n) %>%
+  filter(n >= 100)
+
+cor(tmp$avg_rating, tmp$n)
+
+```
+
+Next, we'll explore the impact of different genres. While we know there are `r n_distinct(edx$genres)`, we can see that most movies have more than one genre assigned.
+```{r exploring_genres}
+
+tmp <- edx %>% group_by(genres) %>% summarize(n = n())
+tmp[order(-tmp$n),]
+
+```
+
+Looking at just the individual genres, we can see that Drama, Comedy, Action, and Thriller are the most common and Western, Film-Noir, Documentary, and IMAX are the least common.
+```{r find-unique-genres-and-frequency}
+
+Genres <- str_split(edx$genres, "\\|") %>% flatten_chr() %>% stri_unique()
+
+sapply(Genres, function(g) {
+  sum(str_detect(edx$genres, g))
+  }) %>% 
+  sort(decreasing = TRUE) %>%
+  knitr::kable(., "simple", col.names = "Number of Ratings", format.args = list(big.mark = ","))
+
+```
+
+
+
+```{r avg_rating_by_genres}
+tmp <- edx %>% group_by(genres) %>% summarize(n = n(), avg_rating = sum(rating)/n) %>% filter(n >= 10)
+tmp[order(-tmp$avg_rating),]
+```
+
+```{r plot_avg_rating_by_genre}
+
+tmp %>% ggplot(aes(n, avg_rating)) + geom_point()
+
+```
+
+# Fit the data to a model
+First define a loss function as the distance the predicted rating is from the mean. If this value is >1, then the model is missing by more than one star
+
+```{r loss-function}
+
+RMSE <- function(true_ratings, predicted_ratings){
+     sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+
+```
+The estimate that minimizes the residual mean squared error is the least squares estimate of mu. In this case, that's just the average of all the ratings.
+```{r avg_rating_train}
+
+mu <- mean(edx$rating)
+mu
+
+```
+
+We can measure the effectiveness of this model using the RMSE function and "true_ratings" and "predicted_ratings" 
+```{r overall_average_rating_model}
+
+overall_average_rating_model <- RMSE(validation$rating, mu) 
+overall_average_rating_model
+
+```
+Create a table to store the results as we go along
+```{r results_table}
+
+rmse_results <- data_frame(method = "Overall Average Rating Model", RMSE = overall_average_rating_model)
+rmse_results
+
+```
+
+Adding a term, b_i to represent the average rating for movie a specific movie (i). The least squares estimate, b-hat_i, is just the average of y_u,i minus the overall mean for each movie.
+```{r movie_effect_model}
+
+# compute the "b" term for every movie as the difference in its overall average from that of all movies
+movie_avgs <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = mean(rating - mu))
+movie_avgs %>% qplot(b_i, geom ="histogram", bins = 10, data = ., color = I("black"))
+
+# how much did our prediction improve by adding the "b" term
+predicted_ratings <- mu + validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  .$b_i
+
+movie_effect_model <- RMSE(predicted_ratings, validation$rating)
+# add this new model to the table
+rmse_results <- bind_rows(rmse_results,data_frame(method="Movie Effect Model", RMSE = movie_effect_model))
+rmse_results %>% knitr::kable() 
+
+```
+
+Next explore difference related to specific effects of differences in users approach to ratings. Compute the average rates for users who have rated > 100 movies.
+```{r user_effects_histogram}
+
+edx %>% 
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating)) %>% 
+  filter(n()>=100) %>%
+  ggplot(aes(b_u)) + 
+  geom_histogram(bins = 30, color = "black")
+
+```
+
+Add a term to the model for the user specific effect b(u). Using the traditional regression function -- lm(rating ~ as.factor(movieId) + as.factor(userId)) -- will take a long time to run and may crash my computer. To work around this, we'll add this effect using an approximation.
+```{r user_effect_model}
+
+# compute the b_u term for the model
+user_avgs <- edx %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_u = mean(rating - mu - b_i))
+
+# compute the predicted values using the new b_u term
+predicted_ratings <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>% # the overall ratings averages
+  left_join(user_avgs, by='userId') %>% # the user specific averages
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+user_effect_model <- RMSE(predicted_ratings, validation$rating)
+rmse_results <- bind_rows(rmse_results, data_frame(method = "Movie + User Effects Model",  
+  RMSE = user_effect_model ))
+rmse_results %>% knitr::kable()
+
+```
+
+
+# Conclusions
+[must include the final RMSE and explanations]
+
+
+<hr style="border:1px solid black"> </hr>
+
+# TODO list for the project
+read the summaries of the winning recommendations from the Netflix competition
+can i add an index to the rmd file? 
+
+# Random thoughts and ideas
+* do ratings closer together in time have more predictive power
+* do ratings for a genre from a particular era tell us anything
+
+***
+
+# Holding Tank - Stuff I'm not sure I need
+number of ratings by year
+include chart 1 here - We used the table function in R to conveniently summarize the number of ratings by year. There are some clear anomolies in the data. The year 1998 had an unusually low number of ratings and the years 2000 and 2005 are the highest by a wide margin. Is that a data error or is there an explanation for why more movies are rated in these years.
+
+
+the timing of when a user rates a movie matters. sometimes they "catch-up" and rate many movies in one day
+the average rating for some movies changes over time as well
+
+### Graph 5 - Number of users per year
+I was curious how many unique users rated movies in every given year. To do this, I used the aggregate function which lets you execute a function against subsets of your data. The resulting bar chart shows that we had over 17,000 distinct users in 1996. This seems like a possible outlier and worth reading the data documentation to understand why this would be.
+
+average number of ratings per user per year
+number of movies per genre (can we summarize the genres)?
+average ratings per genre
+distribution of ratings
+graph showing the normal curve and the distribution of ratings around that
+standard deviations and mean of average ratings by year
+standard deviations and mean of ratings by genre
+look for outliers in number of ratings per user and / or ratings per movie?
+
