@@ -1,44 +1,219 @@
+#####################################################################################################################
 # Project MovieLens for HarvardX -  PH125.9x, Data Science: Capstone #
-# This is a working file to flesh out code before incorporating in to the RMD file
-
-# ************************************************************************************************
-# Exploring the dataset - for the course quiz
-# ************************************************************************************************
+# Becky Johnson / Github: Yowza63
+# R code to predict how users are likely to rate specific movies; from this the predictions for the highest rated
+# movies can be recommended to a user as those they might enjoy
+# Model is trained on the edx dataset and measured on the validation dataset using an RMSE loss calculation
+# Full explanations and write-up are found in the file DS-Capstone-Movielens-Report.Rmd
+#####################################################################################################################
 
 # load the libraries needed
 library(tidyverse)
+library(caret)
+library(stringi)
+library(kableExtra)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(dlookr)
+library(hrbrthemes)
 
-# read in the datasets produced from running MovieLens_Data_Wrangling.R
+# read in the datasets produced from running DS-Capstone-Movielens-Data.R
 edx <- readRDS("movielens_training_data.rds")
 validation <- readRDS("movielens_validation_data.rds")
 
+###!!! Just for testing code !!!###
+tmp <- edx[1:50000]
+
+# ------------------------------------------------------------------------------------------------------------------
+#  High level exploration of the data
+# ------------------------------------------------------------------------------------------------------------------
+
+# Confirm there are no "NA" values in the data using the apply function with the 2 argument for columns
+apply(apply(edx, 2, is.na), 2, sum)
+
+# Examine the structure of edx
+str(edx)
+
+# ------------------------------------------------------------------------------------------------------------------
+#  User specific data exploration (userId)
+# ------------------------------------------------------------------------------------------------------------------
+
+# Do individual user's rate movies higher or lower, on average, than other user's?
+# Do user's have different quantities of rated movies?
+# Are there anomolies in the timing for how movies are rated?
+
+# TODO: Consider adding columns for the average rating for each user and the total rated for each user
+
+# How many unique users?
+n_distinct(edx$userId)
+
+# The average rating per user
+edx %>% group_by(userId) %>% 
+  summarize(n = n(), avg_per_user = sum(rating)/n) %>% 
+  summarize(avg_ratings_by_user = mean(avg_per_user)) %>%
+  pull(avg_ratings_by_user)
+
+# The overall average rating is .1 lower than the simple average of each user's average rating implying bias
+mean(edx$rating)
+
+# The user's average ratings appear normally distributed. There are clear user specific effects
+edx %>% group_by(userId) %>% summarize(n = n(), avg_per_user = sum(rating)/n) %>% 
+  ggplot(aes(avg_per_user)) + 
+  geom_histogram(binwidth = .2, fill = "#69b3a2", col = "black") + 
+  xlab("User Specific Average Ratings") +
+  ylab("Number of Users") + 
+  labs(title = "Average Ratings Across Users") + 
+  theme_ipsum()
+
+# Most users rate relatively few movies, but there is a long tail of users who rate thousands of films
+edx %>% group_by(userId) %>% summarize(n = n()) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(binwidth = 25, fill = "#69b3a2", col = "black") + 
+  xlab("Number of Movies Rated") +
+  ylab("Number of Users") + 
+  labs(title = "Volume of Movies Rated by User") + 
+  theme_ipsum()
+
+# Running the graph above but capping the population at those with 500 movies rated
+edx %>% group_by(userId) %>% summarize(n = n()) %>% 
+  filter(n <= 500) %>%
+  ggplot(aes(n)) + 
+  geom_histogram(binwidth = 25, fill = "#69b3a2", col = "black") + 
+  xlab("Number of Movies Rated") +
+  ylab("Number of Users") + 
+  labs(title = "Volume of Movies Rated by User") + 
+  theme_ipsum()
+
+# What percent of users rate 25 or fewer movies?
+edx %>% group_by(userId) %>% 
+  summarize(n = n()) %>% 
+  summarize(users_50_or_less = length(n[n <= 50])/length(n)) %>% 
+  pull(users_50_or_less)
+
+# What portion of ratings are associated with users rating 25 or fewer movies? Only 10%, so 43% of users
+# represent just 10% of the total number of ratings
+edx %>% group_by(userId) %>% 
+  summarize(n = n()) %>% 
+  summarize(ratings_users_50_or_less = sum(n[n <=50])/sum(n)) %>% 
+  pull(ratings_users_50_or_less)
+
+# Create a scatter plot of the data which shows outliers of users with large number of ratings and 
+# lower overall averages
+edx %>% group_by(userId) %>% 
+  summarize(n = n(), avg_per_user = sum(rating/n)) %>%
+  ggplot(aes(avg_per_user, n)) + geom_point() + 
+  xlab("Average Rating by User") + 
+  ylab("Number of Movies Rated") + 
+  labs(title = "Average Ratings and Volume Rated") + 
+  theme_ipsum()
+
+# Explore this further by looking at the averages for just those users with over 2000 ratings they clearly are 
+# below the overall overage [TODO: LABEL THE VERTICAL LINE FOR THE OVERALL AVERAGE]
+edx %>% group_by(userId) %>% 
+  summarize(n = n(), avg_per_user = sum(rating/n)) %>%
+  filter(n >= 2000) %>%
+  ggplot(aes(avg_per_user, n)) + geom_point() + 
+  xlab("Average Rating by User") + 
+  ylab("Number of Movies Rated") + 
+  labs(title = "Average Ratings and Volume Rated", subtitle = "Users >= 2000 Movies Rated") + 
+  geom_vline(xintercept = mean(edx$rating)) + 
+  theme_ipsum()
+
+# The averages for all users and those that rate 2000 or more movies are significantly different
+edx %>% group_by(userId) %>% 
+  summarize(n = n(), avg_per_user = sum(rating)/n) %>% 
+  filter(n >= 2000) %>%
+  summarize(avg_ratings_by_user = mean(avg_per_user)) %>%
+  pull(avg_ratings_by_user)
+
+edx %>% group_by(userId) %>% 
+  summarize(n = n(), avg_per_user = sum(rating)/n) %>% 
+  summarize(avg_ratings_by_user = mean(avg_per_user)) %>%
+  pull(avg_ratings_by_user)
+
+# To visualize the differences between users with fewer ratings and those who've rated thousands we'll create bins
+# of the data by number of ratings and create a boxplot for each bin. The plot shows that the largest population
+# of users are those who only rate a few movies and these users tend to have higher ratings.
+# TODO:  Change the bin names to something more meaningful, add a label for the number of users in each bin
+edx %>% group_by(userId) %>% 
+  summarize(n = n(), avg_per_user = sum(rating)/n) %>%
+  mutate(bin = binning(n, nbins = 6, type = "equal")) %>% 
+  ggplot(aes(x=bin, y=avg_per_user) ) +
+  geom_boxplot(fill="#69b3a2") + 
+  theme_ipsum() +
+  xlab("Bin") + 
+  theme(axis.text.x = element_text(face="plain", color="#69b3a2", size=8, angle=45))
+
+# TODO: compute the average rating for each user and total number of movies rated, sort lowest to 
+# highest by number rated, split into 10 buckets, compute the average ratings, % of total ratings, and
+# total number of ratings for each bucket
+# Can the aggregate function help?
+
+# ------------------------------------------------------------------------------------------------------------------
+#  Explore the timing of when user's rated movies (timestamp)
+# ------------------------------------------------------------------------------------------------------------------
+# What is the average length of time a user has been rating movies?
+# What is the distribution of time rating movies?
+# Are they anomolies in how many movies are rated in a given day or week?
+# Do users who have been rating movies longer tend to have lower ratings?
+
+a <- tmp %>% group_by(userId) %>% summarize(n=n(), userId=userId, timestamp = timestamp)
+a <- a %>% group_by(userId) %>% 
+  mutate(last_rating_date = max(timestamp), first_rating_date = min(timestamp))
+a <- a %>% select(-timestamp)
+index <- which(duplicated(a))
+a <- a[-index,]
+
+year(as_datetime(a$last_rating_date)) - year(as_datetime(a$first_rating_date))
+
+b <- as_datetime(tmp$timestamp[1000])
+c <- as_datetime(tmp$timestamp[5000])
+
+a <- tmp %>% mutate(date = as_datetime(timestamp)) %>%
+  group_by(userId) %>%
+  mutate(last_rating_date = max(date), first_rating_date = min(date)) %>%
+  summarize(n = n())
 
 
-# ************************************************************************************************
-# Visualize the Data 
-# ************************************************************************************************
 
-# Make a smaller version of edx for experimentation
-set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
-test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.01, list = FALSE)
-edx_small <- edx[test_index,]
+year(as_datetime(tmp$timestamp))
 
-# confirming there are no "NA" values in the data
-for (i in 1:length(colnames(edx_small))){
-  print(sum(is.na(edx_small[,1])))
-}
+as.data.frame(strsplit(as_datetime(tmp$timestamp), " "))
 
-# Examine structure of the data
-str(edx_small)
-sd(edx_small$rating)
-summary(edx_small)
+tmp <- mutate(tmp, year = year(as_datetime(timestamp)))
 
-# Explore the data with a few plots
-library(tidyverse)
-library(ggplot2)
-library(dplyr)
 
-# 1. Number of ratings by year
+# 5. number of unique users per year
+# the aggregate function, using n_distinct by year, is retuning the number of distinct items in 
+# each year for every column. save as edx_distinct_by_year for use in later explorations
+# Note:  I created a tiny sample of edx (.001% or 90 values) ran aggregate and then computed the
+# expected values by pulling the data into excel using write.csv
+edx_distinct_by_year <- aggregate(edx, by = list(edx$year), FUN = n_distinct)
+
+edx_distinct_by_year %>% filter(Group.1 > 1995 & Group.1 < 2009) %>% 
+  ggplot(aes(x = Group.1, y = userId)) + 
+  geom_bar(stat = "identity", width = .8, fill = "steelblue") + 
+  labs(title = "Number of Unique Users in Every Year", 
+       x = NULL, 
+       y = 'Number of Unique Users') 
+
+# 6. average number of ratings per user - how active are users
+length(edx$rating) / n_distinct(edx$userId) # the overall average
+
+tmp <- edx %>% 
+  group_by(userId) %>% 
+  summarize(n = n(), ratings_per_user = sum(rating)/n) 
+
+cor(tmp$ratings_per_user, tmp$n)
+
+tmp %>% ggplot(aes(average_rating, n)) + geom_point()
+
+length(edx$rating)/n_distinct(edx$userId) # what's the overall average
+
+
+
+# Movies by year
 tmp <- table(edx_small$year) # make a summary table of number of movies by year
 x <- as.data.frame(tmp, optional = TRUE) %>% rename(Year = Var1, Number = Freq)
 ggplot(x, aes(x = Year, y = Number)) + 
@@ -102,33 +277,6 @@ tmp[order(-tmp$n),]
 tmp$movieId[which(tmp$n == max(tmp$n))]
 a <- edx$rating[which(edx$movieId == 296)]
 
-# 5. number of unique users per year
-# the aggregate function, using n_distinct by year, is retuning the number of distinct items in 
-# each year for every column. save as edx_distinct_by_year for use in later explorations
-# Note:  I created a tiny sample of edx (.001% or 90 values) ran aggregate and then computed the
-# expected values by pulling the data into excel using write.csv
-edx_distinct_by_year <- aggregate(edx, by = list(edx$year), FUN = n_distinct)
-
-edx_distinct_by_year %>% filter(Group.1 > 1995 & Group.1 < 2009) %>% 
-  ggplot(aes(x = Group.1, y = userId)) + 
-  geom_bar(stat = "identity", width = .8, fill = "steelblue") + 
-  labs(title = "Number of Unique Users in Every Year", 
-       x = NULL, 
-       y = 'Number of Unique Users') 
-
-# 6. average number of ratings per user - how active are users
-length(edx$rating) / n_distinct(edx$userId) # the overall average
-
-tmp <- edx %>% 
-  group_by(userId) %>% 
-  summarize(n = n(), ratings_per_user = sum(rating)/n) 
-
-cor(tmp$ratings_per_user, tmp$n)
-
-tmp %>% ggplot(aes(average_rating, n)) + geom_point()
-
-length(edx$rating)/n_distinct(edx$userId) # what's the overall average
-
 # Table or graph of genres, average rating, distinct users, number of ratings
 tmp <- edx %>% group_by(genres) %>% summarize(n = n(), avg_rating = sum(rating)/n) %>% filter(n >= 10)
 tmp[order(-tmp$avg_rating),]
@@ -136,7 +284,6 @@ tmp %>% ggplot(aes(n, avg_rating)) + geom_point()
 
 # show the total rated for every user and plot the series
 # NOT DONE!
-library(dplyr)
 tmp <- data.frame(id = edx_small$userId, rating = edx_small$rating) # dataset of just ratings and userId's
 out <- aggregate(x = tmp, by = list(tmp$id), FUN = sum) %>% select(year = Group.1, id = id)
 out2 <- aggregate(x = tmp, by = list(tmp$id), FUN = c('sum', 'length'))
@@ -199,7 +346,7 @@ dt %>%
 
 # Save in case I want to add a column
 # Create a year column to capture the year associated with the ratings (Becky added this code)
-library(lubridate)
+
 edx <- mutate(movielens, year = year(as_datetime(timestamp)))
 validation <- mutate(movielens, year = year(as_datetime(timestamp)))
 

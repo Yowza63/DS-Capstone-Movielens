@@ -24,13 +24,18 @@ library(kableExtra)
 
 ```
 
-# Problem Statement: Build a model to predict how a particular movie viewer will rate a specific movie
+# Introduction
+How someone rates the movies they've seen may tell us something about what other movies they might enjoy. In addition, there may be people like them who've seen other movies that could provide additional insights into viewing preferences. There are other factors that could be considered such as a movies emerging or waning overall popularity. In this project, I set out to build a model using some of these factors to predict how a specific user will rate a specific movie. This model could then be used to present movies on a service like Netflix to users that they will have a high likelihood of enjoying. 
+
+## Problem Statement: Build a model to predict how a particular movie viewer will rate a specific movie
 Create a model to predict the rating a specific user will assign to a specific movie. From this we can use the movies with high predicted ratings for a specific user to create recommendations of movies that user is likely to enjoy. 
 
-# Project Overview
-This project will build a predictive model to guess the rating a user will assign to a specific movie. We will start with gathering the MovieLens data, creating a training data set to fit our model, and a testing or validation data set to measure the effectiveness of the model. The predictive model will use machine learning techniques to fit the best model.
+## Project Overview
+To build the movie ratings predictive model we will leverage the Movielens data, creating a training data set to fit our model, and a validation data set to measure the effectiveness of the model. The first step will be to explore the dataset using a number of visualization techniques and summary metrics. We'll then create a predictive model using machine learning techniques to fit the best model. MIGHT NEED TO DESCRIBE THIS MORE!
 
-## Data needed to answer the question. This section describes the code in 0_MovieLens_Data_Wrangling.R
+## question - should i be splitting edx to create a testing dataset?? I'm not allowed to test using the validation set until the very end!!
+
+# Data needed to answer the question. This section describes the code in 0_MovieLens_Data_Wrangling.R
 We start with the 10M MovieLens dataset available on the Grouplens.org site maintained by the University of Minnesota. This database includes 10 million ratings and 100,000 tag applications applied to 10,000 movies by 72,000 users. It was released 1/2009. 
 
 The README.txt for this dataset is found here:
@@ -50,6 +55,26 @@ Read in the training dataset, edx, created using the file '0_MovieLens_Data_Wran
 edx <- readRDS("movielens_training_data.rds")
 validation <- readRDS("movielens_validation_data.rds")
 ```
+
+## Further segment the edx dataset into a training and test set
+NOT SURE YET ABOUT THIS PART
+WE MIGHT NEED TO SPLIT EDX SO THAT WE CAN SET THE PARAMETERS IN THE MODELS
+IS MY DATA BIASED IN SOME WAY?
+DO I ASSUME THE RATINGS ARE A CONTINUOUS VARIABLE
+
+## Resources consulted
+http://re-design.dimiter.eu/?p=767
+https://towardsdatascience.com/recommendation-systems-in-the-real-world-51e3948772f3
+https://builtin.com/data-science/recommender-systems
+https://medium.com/swlh/recommendation-system-for-movies-movielens-grouplens-171d30be334e
+For examples of how to bin data and create box plots:
+https://www.r-graph-gallery.com/268-ggplot2-boxplot-from-continuous-variable.html
+http://adv-r.had.co.nz/Subsetting.html # a nice summary of subsetting
+
+# Methods and Analysis
+
+# Measurement of Success
+The model will be measured on a RMSE (Root Mean Squared Error) of the predicted outcomes (ratings) and the actual results for the validation dataset. The goal is to have the smallest RMSE as possible.
 
 ## Explore the training dataset
 There are `r nrow(edx)` rows and `r ncol(edx)` columns in the data. 
@@ -263,6 +288,7 @@ rmse_results %>% knitr::kable()
 
 ```
 
+ormalize for user specific effects
 Next explore difference related to specific effects of differences in users approach to ratings. Compute the average rates for users who have rated > 100 movies.
 ```{r user_effects_histogram}
 
@@ -298,8 +324,12 @@ rmse_results %>% knitr::kable()
 
 ```
 
+# Results
+[include the RMSE]
+[a results section that presents the modeling results and discusses the model performance]
 
-# Conclusions
+# Conclusion
+[a conclusion section that gives a brief summary of the report, its limitations and future work]
 [must include the final RMSE and explanations]
 
 

@@ -15,3 +15,6 @@ ml-10M100K/
 
 # Test files
 test*.*
+
+# Word files that describe the project plan and any "to do" items
+*.docx
