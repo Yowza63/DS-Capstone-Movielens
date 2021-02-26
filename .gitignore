@@ -18,3 +18,12 @@ test*.*
 
 # Word files that describe the project plan and any "to do" items
 *.docx
+
+# Scratch Pad with code I'm saving
+Scratch-Pad.R
+
+# Add the 
+**/.DS_Store
+
+# An old file used to independently create the datasets
+DS-Capstone-Movielens-Data.R
