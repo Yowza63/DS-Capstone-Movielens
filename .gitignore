@@ -13,8 +13,10 @@
 *.rds
 ml-10M100K/
 
-# Test files
-test*.*
+# Test files & drafts
+*test*.*
+*draft*.*
+*temp*.*
 
 # Word files that describe the project plan and any "to do" items
 *.docx
@@ -27,3 +29,10 @@ Scratch-Pad.R
 
 # An old file used to independently create the datasets
 DS-Capstone-Movielens-Data.R
+
+# Log files
+*.log
+
+# Output files
+*.html
+*.pdf

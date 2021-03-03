@@ -7,91 +7,91 @@
 ##################################################################################################################
 
 # ---------------------------------------------------------------------------------------------------------------
-#  STEP 1: Create the Datasets
+#  STEP 1: Define the problem
+#  Build a model to predict ratings for movies a user hasn't yet rated
+# ---------------------------------------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------------------------------------
+#  STEP 2: Create the Datasets
 #  Download files from the grouplens.org site, create a training set (edx) and a testing set (validation). 
 #  These are stored in movielens_training_data.rds and movielens_validation_data.rds to avoid re-running these
 #  step during code development
 # ---------------------------------------------------------------------------------------------------------------
 
 # Create edx set, validation set (final hold-out test set)
-# Note: this process could take several minutes
 
-# Load the needed libraries for this step
-if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
-
-library(tidyverse)
-library(caret)
-library(data.table)
-
-# For reference the urls for the MovieLens 10M dataset:
-# https://grouplens.org/datasets/movielens/10m/
-# http://files.grouplens.org/datasets/movielens/ml-10m.zip
-
-# Process the data
-dl <- tempfile()
-download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
-
-ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
-                 col.names = c("userId", "movieId", "rating", "timestamp"))
-
-movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
-colnames(movies) <- c("movieId", "title", "genres")
-
-# if using R 3.6 or earlier:
-# movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
-#                                           title = as.character(title),
-#                                           genres = as.character(genres))
-# if using R 4.0 or later:
-movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
-                                           title = as.character(title),
-                                           genres = as.character(genres))
-
-movielens <- left_join(ratings, movies, by = "movieId")
-
-## Create the edx set (to work with and create our models) and the validation set
-# Validation set will be 10% of MovieLens data
-set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
-test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
-edx <- movielens[-test_index,]
-temp <- movielens[test_index,]
-
-# Use semi_join() to remove users from temp (soon to be the validation set) that are not in edx. This results
-# in removing 8 rows. The rationale is that we are trying to predict how user's will rate movies so we want to 
-# build a model with data for specific users and then try that out on movies that user has rated in the 
-# validation set. So the users in the validation set need to all be in the test set.
-# The semi_join function keeps the rows x (temp) that have movieId and userId's that match items in y (edx)
-validation <- temp %>% 
-  semi_join(edx, by = "movieId") %>%
-  semi_join(edx, by = "userId")
-
-anti_join(temp, validation, by = "movieId") # shows the rows that have been removed
-
-# Add rows removed from validation set back into edx set
-# returns rows from temp where there are not matching values in validation, keeping just columns in temp
-removed <- anti_join(temp, validation) 
-edx <- rbind(edx, removed)
-
-# save the edx and validation objects to a file to reference if working on the project over time
-saveRDS(edx, 'movielens_training_data.rds')
-saveRDS(validation, 'movielens_validation_data.rds')
-
-# removes elements used to create needed data
-rm(dl, ratings, movies, test_index, temp, movielens, removed, edx, validation) 
-
-# ---------------------------------------------------------------------------------------------------------------
-#  STEP 2:  Read in the previously processed and stored datasets
-#  Note: Start here if the first step has previously been run
-# ---------------------------------------------------------------------------------------------------------------
-edx <- readRDS("movielens_training_data.rds")
-validation <- readRDS("movielens_validation_data.rds")
+# If previously run, we'll load the data from files
+if (file.exists("movielens_training_data.rds") == TRUE){
+  # Read in the previously processed and stored datasets
+  edx <- readRDS("movielens_training_data.rds")
+  validation <- readRDS("movielens_validation_data.rds")
+  # Otherwise the download process will run taking several minutes
+} else {
+  
+  # Load the needed libraries for this step
+  if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+  if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+  if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+  
+  # For reference the urls for the MovieLens 10M dataset:
+  # https://grouplens.org/datasets/movielens/10m/
+  # http://files.grouplens.org/datasets/movielens/ml-10m.zip
+  
+  # Process the data
+  dl <- tempfile()
+  download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+  
+  ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                   col.names = c("userId", "movieId", "rating", "timestamp"))
+  
+  movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+  colnames(movies) <- c("movieId", "title", "genres")
+  
+  # if using R 3.6 or earlier:
+  # movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+  #                                           title = as.character(title),
+  #                                           genres = as.character(genres))
+  # if using R 4.0 or later:
+  movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
+                                             title = as.character(title),
+                                             genres = as.character(genres))
+  
+  movielens <- left_join(ratings, movies, by = "movieId")
+  
+  ## Create the edx set (to work with and create our models) and the validation set
+  # Validation set will be 10% of MovieLens data
+  set.seed(1, sample.kind="Rounding") # if using R 3.5 or earlier, use `set.seed(1)`
+  test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+  edx <- movielens[-test_index,]
+  temp <- movielens[test_index,]
+  
+  # Use semi_join() to remove users from temp (soon to be the validation set) that are not in edx. This results
+  # in removing 8 rows. The rationale is that we are trying to predict how user's will rate movies so we want to 
+  # build a model with data for specific users and then try that out on movies that user has rated in the 
+  # validation set. So the users in the validation set need to all be in the test set.
+  # The semi_join function keeps the rows x (temp) that have movieId and userId's that match items in y (edx)
+  validation <- temp %>% 
+    semi_join(edx, by = "movieId") %>%
+    semi_join(edx, by = "userId")
+  
+  anti_join(temp, validation, by = "movieId") # shows the rows that have been removed
+  
+  # Add rows removed from validation set back into edx set
+  # returns rows from temp where there are not matching values in validation, keeping just columns in temp
+  removed <- anti_join(temp, validation) 
+  edx <- rbind(edx, removed)
+  
+  # save the edx and validation objects to a file to reference if working on the project over time
+  saveRDS(edx, 'movielens_training_data.rds')
+  saveRDS(validation, 'movielens_validation_data.rds')
+  
+  # removes elements used to create needed data
+  rm(dl, ratings, movies, test_index, temp, movielens, removed)
+}    
 
 # ---------------------------------------------------------------------------------------------------------------
-#  STEP 3: Load libraries used in the analysis
-# ---------------------------------------------------------------------------------------------------------------
-
 # Load the libraries needed for the data exploration and model fitting
+# ---------------------------------------------------------------------------------------------------------------
 
 # Data science tools
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
@@ -182,18 +182,18 @@ edx %>% group_by(userId) %>% summarize(n = n()) %>%
   labs(title = "Volume of Movies Rated by User") + 
   theme_ipsum()
 
-# What percent of users rate 25 or fewer movies?
+# What percent of users rate 100 or fewer movies?
 edx %>% group_by(userId) %>% 
   summarize(n = n()) %>% 
-  summarize(users_50_or_less = length(n[n <= 50])/length(n)) %>% 
-  pull(users_50_or_less)
+  summarize(users_100_or_less = length(n[n <= 100])/length(n)) %>% 
+  pull(users_100_or_less)
 
-# What portion of ratings are associated with users rating 25 or fewer movies? Only 10%, so 43% of users
+# What portion of ratings are associated with users rating 100 or fewer movies? Only 10%, so 43% of users
 # represent just 10% of the total number of ratings
 edx %>% group_by(userId) %>% 
   summarize(n = n()) %>% 
-  summarize(ratings_users_50_or_less = sum(n[n <=50])/sum(n)) %>% 
-  pull(ratings_users_50_or_less)
+  summarize(ratings_users_100_or_less = sum(n[n <=100])/sum(n)) %>% 
+  pull(ratings_users_100_or_less)
 
 # Create a scatter plot of the data which shows outliers of users with large number of ratings and 
 # lower overall averages
@@ -206,7 +206,7 @@ edx %>% group_by(userId) %>%
   theme_ipsum()
 
 # Explore this further by looking at the averages for just those users with over 2000 ratings they clearly are 
-# below the overall overage [TODO: LABEL THE VERTICAL LINE FOR THE OVERALL AVERAGE]
+# below the overall overage
 edx %>% group_by(userId) %>% 
   summarize(n = n(), avg_per_user = sum(rating/n)) %>%
   filter(n >= 2000) %>%
@@ -251,8 +251,9 @@ edx %>% group_by(userId) %>%
   ggplot(aes(x=bin, y=avg_per_user) ) + # plot the bins
   geom_boxplot(fill="#69b3a2") + # add green to the boxplots
   theme_ipsum() + # format for the graph
+  geom_jitter(width = .2, alpha = .1) + 
   ylab("Average Rating Per User") + 
-  labs(title = "Number of Movies Rated", subtitle = "Excludes Users with > 1000 Ratings") + 
+  labs(title = "Binned Users by Number of Movies Rated", subtitle = "Excludes Users with > 1000 Ratings") + 
   # format the fonts and size of the labels
   theme(axis.text.x = element_text(face="plain", color="black", size=8, angle=90), 
         plot.title = element_text(size = 14), plot.subtitle = element_text(size = 10)) + 
@@ -319,15 +320,21 @@ newtmp %>% ggplot(aes(x=tmp, y=avg_per_user) ) + # plot the buckets
 newtmp %>% group_by(tmp) %>% summarize(avg = mean(avg_per_user))
 
 # ---------------------------------------------------------------------------------------------------------------
-#  STEP 4c:  Explore movie specific effects (movieId, title)
+#  STEP 4c:  Explore movie specific effects, movieId
 # ---------------------------------------------------------------------------------------------------------------
 
-# The number of distinct movies
-n_distinct(edx$movieId)
+# The distribution of average ratings is skewed right
+edx %>% group_by(movieId) %>% summarize(n = n(), avg_rating = sum(rating)/n) %>% 
+  ggplot(aes(avg_rating)) + 
+  geom_histogram(binwidth = .2, fill = "#69b3a2", col = "black") + 
+  xlab("Movie Specific Average Ratings") +
+  ylab("Number of Movies") + 
+  labs(title = "Average Ratings Across Movies") + 
+  theme_ipsum()
 
 # The scatterplot of average ratings and volumne of ratings (n) shows a positive relationship between 
 # number of ratings and average ratings. It also shows a large number of movies with very few ratings 
-edx_movies %>% 
+edx_movies %>%
   ggplot(aes(x = n, y = avg_rating)) + 
   geom_point() + 
   theme_ipsum() + 
@@ -393,6 +400,11 @@ RMSE <- function(true_ratings, predicted_ratings){
   sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
+# Create a table to store the results and add the Target we're aiming to be below
+target <-  0.86490
+rmse_results <- tibble("Method" = "Target", RMSE = target, "Diff. from Target" = target - RMSE)
+
+
 # ---------------------------------------------------------------------------------------------------------------
 #  STEP 5a: A simple approach
 # ---------------------------------------------------------------------------------------------------------------
@@ -405,8 +417,9 @@ mu
 naive_rmse <- RMSE(test_set$rating, mu)
 naive_rmse
 
-# Create a table to store the results
-rmse_results <- tibble(method = "Just the average", RMSE = naive_rmse)
+# Add the results to the table
+rmse_results <- bind_rows(rmse_results, 
+   tibble("Method" = "Just the Average", RMSE = naive_rmse, "Diff. from Target" = target - RMSE))
 
 # Add the movie effects recognizing that some movies are rated higher on average than others
 movie_avgs <- train_set %>% 
@@ -427,9 +440,10 @@ predicted_ratings <- mu + test_set %>%
   pull(b_i)
 RMSE(predicted_ratings, test_set$rating)
 
-# Add these results
+# Add these results to the table
 model_1_rmse <- RMSE(predicted_ratings, test_set$rating)
-rmse_results <- bind_rows(rmse_results, tibble(method="Movie Effect Model", RMSE = model_1_rmse))
+rmse_results <- bind_rows(rmse_results, 
+      tibble("Method" = "Movie Effect Model", RMSE = model_1_rmse, "Diff. from Target" = target - RMSE))
 
 # Compute the average rating for user userId for those that have rated over 100 movies
 train_set %>% 
@@ -461,9 +475,10 @@ predicted_ratings <- ifelse(predicted_ratings > 5, 5, predicted_ratings)
 
 # Compute the RMSE of this new model with both user and movie effects and save in an object
 model_2_rmse <- RMSE(predicted_ratings, test_set$rating)
+
 # Add the results to our table
-rmse_results <- bind_rows(rmse_results, tibble(method="Movie + User Effects Model", 
-      RMSE = model_2_rmse))
+rmse_results <- bind_rows(rmse_results, 
+   tibble("Method" = "Movie and User Effects", RMSE = model_2_rmse, "Diff. from Target" = target - RMSE))
 
 # ---------------------------------------------------------------------------------------------------------------
 #  STEP 5b: Using regularization
@@ -580,10 +595,10 @@ qplot(lambdas, rmses)
 lambda <- lambdas[which.min(rmses)]
 lambda
 
-rmse_results <- bind_rows(
-  rmse_results,
-  tibble(method="Regularized Movie + User Effect Model",  
-         RMSE = min(rmses)))
+# Add the results to our table
+rmse_results <- bind_rows(rmse_results, 
+  tibble("Method" = "Regularized Movie + User Effect Model", RMSE = min(rmses), 
+         "Diff. from Target" = target - RMSE))
 knitr::kable(rmse_results, "html") %>%
   kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
 
@@ -621,11 +636,11 @@ r$train(train_set_new, opts = c(opts$min, nthread = 1, niter = 20))
 pred_rvec = r$predict(test_set_new, out_memory())
 head(pred_rvec, 10)
 
-# Add to the table 
+# Add the results to our table
 model_matrix_factorization <- RMSE(test_set$rating, pred_rvec)
-rmse_results <- bind_rows(
-  rmse_results, tibble(method="Matrix Factorization (recosystem)", 
-                       RMSE = model_matrix_factorization))
+rmse_results <- bind_rows(rmse_results, 
+    tibble("Method" = "Matrix Factorization (recosystem", RMSE = model_matrix_factorization,
+    "Diff. from Target" = target - RMSE))
 
 # ---------------------------------------------------------------------------------------------------------------
 # STEP 6: Final assessment using the validation data set
