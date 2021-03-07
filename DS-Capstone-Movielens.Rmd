@@ -71,7 +71,7 @@ kbl(df_wide, booktabs = T) %>% kable_styling(latex_options = "striped")
 
 ```
 
-# Identify the data, wrangle the data into a workable dataset (Step 2)
+# Identify the data, wrangle the data into a workable dataset (Step 1)
 
 We start with the 10M MovieLens dataset available on the Grouplens.org site maintained by the University of Minnesota. This database includes 10 million ratings and 100,000 tag applications applied to 10,000 movies by 72,000 users. It was released 1/2009. 
 
@@ -175,7 +175,7 @@ edx %>% as_tibble()
 ## There are six variables in the edx dataset
 * **edx$userId** - an integer vector with `r n_distinct(edx$userId)` distinct values. There are `r sum(is.na(edx$userId))` NA values in the vector
 * **edx$movieId** - a numeric vector with `r n_distinct(edx$movieId)` distinct values. There are `r sum(is.na(edx$movieId))` NA values in the vector
-* **edx$rating** - a numeric vector with `r n_distinct(edx$rating)` distinct values. There are `r sum(is.na(edx$rating))` NA values in the vector
+* **edx$rating** - a numeric vector with `r n_distinct(edx$rating)` distinct values. There are `r sum(is.na(edx$rating))` NA values in the vector.  The values range from 0 to 5, but higher ratings are more frequently used.
 * **edx$timestamp** - an integer vector showing the time the rating was assigned. The values are seconds since midnight Coordinated Universal Time (UTC) of January 1, 1970
 * **edx$title** - a character vector showing the movie titles. These are not necessarily unique so we should rely on movieId which is unique
 * **edx$genres** - a character vector showing the various movie genres. There are `r n_distinct(edx$genres)` distinct values in the vector. 
@@ -216,7 +216,7 @@ edx %>% group_by(userId) %>% summarize(n = n(), avg_per_user = sum(rating)/n) %>
 
 Most users rate relatively few movies, but there is a long tail of users who rate thousands of films.
 
-```{r num_rated, echo = FALSE}
+```{r num_rated, fig_align = 'left', echo = FALSE}
 
 edx %>% group_by(userId) %>% summarize(n = n()) %>% 
   ggplot(aes(n)) + 
@@ -231,7 +231,7 @@ edx %>% group_by(userId) %>% summarize(n = n()) %>%
 
 Running the graph above but capping the population at those with 500 movies rated.
 
-```{r num_rated_500, echo = FALSE}
+```{r num_rated_500, fig_align = 'left', echo = FALSE}
 
 edx %>% group_by(userId) %>% summarize(n = n()) %>% 
   filter(n <= 500) %>%
@@ -263,7 +263,7 @@ edx %>% group_by(userId) %>%
 
 Explore this further by looking at the averages for just those users with over 2000 ratings they clearly are below the overall overage.
 
-```{r n_over_2000, echo = FALSE}
+```{r n_over_2000, fig_align = 'left', echo = FALSE}
 
 edx %>% group_by(userId) %>% 
   summarize(n = n(), avg_per_user = sum(rating/n)) %>%
@@ -300,7 +300,7 @@ edx %>% group_by(userId) %>%
 To visualize the differences between users with fewer ratings and those who've rated thousands we'll create bins
 of the data by number of ratings and create a boxplot for each bin. The plot shows that the largest population of users are those who only rate a few movies and these users tend to have higher ratings.
 
-```{r binned_by_n, echo = FALSE}
+```{r binned_by_n, fig_align = 'left', echo = FALSE}
 
 # mannual method of finding the bins to create the labels
 c <- edx %>% group_by(userId) %>%
@@ -346,7 +346,7 @@ edx_time <- edx %>%
 
 ```
 
-```{r cum_dist_time, echo = FALSE}
+```{r cum_dist_time, fig_align = 'left', echo = FALSE}
 
 edx_time %>% 
   ggplot(aes(x=as.numeric(time_rating/(60*24*60)))) + 
@@ -382,7 +382,7 @@ newtmp <- data.frame(time_rating = edx_time$time_rating, tmp = tmp,
                      avg_per_user = edx_time$avg_per_user)
 ```
 
-```{r plot_time_bins, echo = FALSE}
+```{r plot_time_bins, fig_align = 'left', echo = FALSE}
 
 newtmp %>% ggplot(aes(x=tmp, y=avg_per_user) ) + # plot the buckets
   geom_boxplot(fill="#69b3a2") + # add green to the boxplots
@@ -420,7 +420,7 @@ edx %>% group_by(movieId) %>% summarize(n = n(), avg_rating = sum(rating)/n) %>%
 ```
 
 The scatterplot of average ratings and volumne of ratings (n) shows a positive relationship between number of ratings and average ratings. It also shows a large number of movies with very few ratings 
-```{r movies_by_rating, echo = FALSE}
+```{r movies_by_rating, fig_align = 'left', echo = FALSE}
 
 edx_movies <- edx %>% group_by(movieId) %>%
   summarize(n = n(), avg_rating = sum(rating)/n)
@@ -467,7 +467,7 @@ sapply(genres, function(g) {
 ```
 
 Explore the average rating per genre. Create a histogram of genres by average rating or boxplots?
-```{r genres_avg_rating, echo = FALSE}
+```{r genres_avg_rating, fig_align = 'left', echo = FALSE}
 
 edx %>% group_by(genres) %>%
   summarize(n = n(), avg = mean(rating)) %>%
@@ -518,13 +518,343 @@ RMSE <- function(true_ratings, predicted_ratings){
 
 # Create a table to store the results and add the Target we're aiming to be below
 target <-  0.86490
-rmse_results <- tibble("Method" = "Target", RMSE = target, "Diff. from Target" = target - RMSE)
+rmse_results <- tibble("Method" = "Target", RMSE = target, "Diff. from Target" = RMSE - target)
+
+```
+
+##  Explore simple approaches (Step 5a)
+In this section we'll look at several simple approaches to predicting how user's will rate a movie. The first is to use just the simple average then will incorporate user and movie bias. The results for these simple approaches are suprisingly good when compared to our target RMSE.
+
+Define a simple model just using the overall average rating and name it "Just the average". In this
+model every movie is rated at the overall average by every user.
+```{r model_avg, include = TRUE}
+
+# define the overall average and store in a variable, mu
+mu <- mean(train_set$rating)
+
+# compute the RMSE (loss function) for the ratings in our test_set
+just_the_average <- RMSE(test_set$rating, mu)
+just_the_average
+
+# Add the results to the table
+rmse_results <- bind_rows(rmse_results, 
+   tibble("Method" = "Just the Average", RMSE = just_the_average, "Diff. from Target" = RMSE - target))
 
 ```
 
 
+Next, we'll add the movie effects recognizing that some movies are rated higher on average than others which we saw in the data exploration work shown previously.
+```{r movie_effects, include = TRUE}
+
+# Define a data set to compute the difference between each movie's average rating and the overall average
+movie_avgs <- train_set %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = mean(rating - mu))
+
+# Compute the RMSE for adding the effect of the average rating for movieId
+predicted_ratings <- mu + test_set %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  pull(b_i)
+RMSE(predicted_ratings, test_set$rating)
+
+# Add these results to the table
+movie_effects <- RMSE(predicted_ratings, test_set$rating)
+rmse_results <- bind_rows(rmse_results, 
+      tibble("Method" = "Movie Effect Model", RMSE = movie_effects, "Diff. from Target" = RMSE - target))
+
+```
+
+We should also take into account invidivdual user bias because we know they rate movies differently.
+```{r user_bias, include = TRUE}
+
+# First create a data set of the user specific effects defined as the overall avg rating for that 
+# user minus the overall average rating across all users minus the variability associated with a 
+# particular movie
+user_avgs <- train_set %>% 
+  left_join(movie_avgs, by='movieId') %>% # adds b_i to the train_set
+  group_by(userId) %>% 
+  summarize(b_u = mean(rating - mu - b_i)) 
+
+# Create predicted ratings using the user effect, movie effect and overall average
+predicted_ratings <- test_set %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  pull(pred)
+# Reset ratings which are >5 to 5 as that is the highest possible rating
+predicted_ratings <- ifelse(predicted_ratings > 5, 5, predicted_ratings)
+
+# Compute the RMSE of this new model with both user and movie effects and save in an object
+user_bias <- RMSE(predicted_ratings, test_set$rating)
+
+# Add the results to our table
+rmse_results <- bind_rows(rmse_results, 
+   tibble("Method" = "Movie and User Effects", RMSE = user_bias, "Diff. from Target" = RMSE - target))
+
+```
+
+##  Using regularization (Step 5b)
+
+One of the challenges with our data is that some movies have only a few ratings. These are likely skewing our predictions and overfitting the model. Regularization is a way to to penalize estimates that are generated using small sample sizes. The general idea behind regularization is to constrain the total variability of the effect sizes. Specifically, instead of minimizing the least squares equation, we minimize an equation that adds a penalty:
+
+$$ \sum_{u,i} \left(y_{u,i} - \mu - b_i\right)^2 + \lambda \sum_{i} b_i^2 $$
+Source: Introduction to Data Science, Irizarry (page 645)
+
+When the sample size $n_i$ is very large then the penalty $\lambda$ is effectively ignored since $n_i+\lambda \approx n_i$. However, when the $n_i$ is small, then the estimate $\hat{b}_i(\lambda)$ is shrunken towards 0. The larger $\lambda$, the more the estimate shrinks toward the mean.
 
 
+When we look at the best and worst movies and how frequently they are rated, something looks amiss. These are all obscure movies with only a few ratings. 
+```{r best_worst, include = TRUE}
+
+# Looking at the highest and lowest rated movies from the last model shows a bunch of random movies
+movie_titles <- edx %>% 
+  select(movieId, title) %>%
+  distinct()
+
+# best movies
+train_set %>% count(movieId) %>% 
+  left_join(movie_avgs, by="movieId") %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(desc(b_i)) %>% 
+  slice(1:10) %>% 
+  select(title, n)
+
+# worst movies
+train_set %>% count(movieId) %>% 
+  left_join(movie_avgs) %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(b_i) %>% 
+  slice(1:10) %>% 
+  select(title, n)
+
+```
+
+To address the problem of users and movies with low frequency in the data, we will use regularization. The best lambda, which creates the lowest rmse, was generated using a cross-validation approach which is shown here, but only for illustrative purposes as it takes a few minutes to run.
+```{r lambda_cross_val, eval = FALSE}
+
+# Define a set of lambdas to test
+lambdas <- seq(0, 10, 0.25)
+
+# store the results in rmses
+rmses <- sapply(lambdas, function(l){
+  
+  # the overall average
+  mu <- mean(train_set$rating)
+  
+  # movie effect scaled by lamdba
+  b_i <- train_set %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n()+l))
+  
+  # user effect scaled by lambda
+  b_u <- train_set %>% 
+    left_join(b_i, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(b_u = sum(rating - b_i - mu)/(n()+l))
+  
+  # compute the predicted ratings on test_set
+  predicted_ratings <- 
+    test_set %>% 
+    left_join(b_i, by = "movieId") %>%
+    left_join(b_u, by = "userId") %>%
+    mutate(pred = mu + b_i + b_u) %>%
+    pull(pred)
+  
+  return(RMSE(predicted_ratings, test_set$rating))
+})
+
+# plot the lambdas and corresponding RMSE values
+qplot(lambdas, rmses)  
+
+# define the best lambda that minimizes RMSE
+lambda <- lambdas[which.min(rmses)]
+lambda
+
+```
+
+We know from the results of running the code above that the best lambda is 5. We'll generate predicted ratings using the lambda of 5, compute the RMSE, and add that to our results table.
+```{r reg_pred, echo = TRUE}
+
+# define the best lambda that minimizes RMSE
+lambda <- 5
+
+# Compute the predicted ratings using the final optimized lamda 
+mu <- mean(train_set$rating)
+
+# movie effect scaled by lamdba
+b_i <- train_set %>% 
+  group_by(movieId) %>%
+  summarize(b_i = sum(rating - mu)/(n()+lambda))
+
+# user effect scaled by lambda
+b_u <- train_set %>% 
+  left_join(b_i, by="movieId") %>%
+  group_by(userId) %>%
+  summarize(b_u = sum(rating - b_i - mu)/(n()+lambda))
+
+# compute the predicted ratings on test_set
+predicted_ratings <- 
+  test_set %>% 
+  left_join(b_i, by = "movieId") %>%
+  left_join(b_u, by = "userId") %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  pull(pred)
+
+rmse_reg <- RMSE(predicted_ratings, test_set$rating)
+
+```
+
+Let's re-look at the best and worst movies. These now make more sense. The best movies are familiar and seem appropriate to be at the top of the list.
+```{r best_worst_reg, echo = FALSE}
+
+# Relooking at the highest rated and lowest rated movies makes more sense
+train_set %>%
+  count(movieId) %>% 
+  left_join(b_i, by = "movieId") %>%
+  left_join(movie_titles, by = "movieId") %>%
+  arrange(desc(b_i)) %>% 
+  slice(1:10) %>% 
+  select(title, n)
+
+train_set %>%
+  count(movieId) %>% 
+  left_join(b_i, by = "movieId") %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(b_i) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  select(title, n)
+
+```
+
+Add the results to our table.
+```{r RMSE_add_reg, echo = FALSE}
+
+rmse_results <- bind_rows(rmse_results, 
+  tibble("Method" = "Regularized Movie + User Effect Model", RMSE = rmse_reg, 
+         "Diff. from Target" = RMSE - target))
+rmse_results
+
+```
+
+#  Matrix Factorization using recosystem (Step 5c)
+Matrix factorization (or collaborative filtering) is a powerful tool in developing recommendation systems. The recosystem library is purpose buit to generate predicted values using this technique. To learn more about this tool see https://cran.r-project.org/web/packages/recosystem/vignettes/introduction.html written by one of the authors of the library.
+
+The recosystem package requires the data to be in a specific matrix format. Each dataset will have three columns - user, item (movie), and rating. We'll use our training and test data to create the data structures needed for recosystem.
+```{r matrix_factorization_setup, echo = TRUE}
+
+set.seed(123) # This is a randomized algorithm
+
+# create the datasets in the right format for recosystem, set index1 = TRUE as our values start with 1 (not 0)
+train_set_new = data_memory(train_set$userId, train_set$movieId, train_set$rating, index1 = TRUE)
+test_set_new = data_memory(test_set$userId, test_set$movieId, test_set$rating, index1 = TRUE)
+
+# create the model object
+r = Reco()
+
+```
+
+Next we need to find the best tuning parameters. This step is shown here only for reference because running it can take ~ 30 minutes or so depending upon the power of your machine.
+```{r tune_opts, eval = FALSE}
+
+opts = r$tune(train_set_new, opts = list(
+  dim = c(10, 20, 30), # number of latent factors
+  lrate = c(0.1, 0.2), # learning rate, which can be thought of as the step size in gradient descent
+  costp_l1 = 0, # L1 regularization cost for user factors
+  costq_l1 = 0, # L1 regulariation cost for item factors
+  nthread = 1, # number of threads for parallel computing, the higher this number the more my machine works
+  niter = 10 # number of iterations
+  ))
+opts
+
+```
+
+With the optimized tuning parameters, we need to train the model and then use it to predict our ratings.
+```{r train_predict, echo = TRUE}
+
+# Here we'll create a list of the optimized parameters we found from running the tuning parameter optimization in r
+opts <- list(
+  dim = 30, 
+  costp_l1 = 0,
+  costp_l2 = .01,
+  costq_l1 = 0,
+  costq_l2 = .1,
+  lrate = .1,
+  loss_fun = 0.8061911)
+
+# train the model using the best tuning parameters
+r$train(train_set_new, opts = c(opts$min, nthread = 1, niter = 20))
+
+# calculate the predicted values
+predicted_ratings = r$predict(test_set_new, out_memory())
+
+```
+
+Finally, compute the RMSE and add the results to our table.
+```{r matrix_to_table, echo = TRUE}
+
+model_matrix_factorization <- RMSE(test_set$rating, predicted_ratings)
+rmse_results <- bind_rows(rmse_results, 
+    tibble("Method" = "Matrix Factorization (recosystem", RMSE = model_matrix_factorization,
+    "Diff. from Target" = RMSE - target))
+rmse_results
+
+```
+
+# Final model assessment using the validation data set (Step 4)
+
+Now that we have a model we think will beat our target RMSE, let's test it using the original holdout set, validation. First, we'll need to create the same three column dataset as we did with our train_set and test_set above.
+```{r data_validation, echo = TRUE}
+
+validation_set_new = data_memory(validation$userId, validation$movieId, index1 = TRUE)
+
+```
+
+Once we have the data in the right format we can use the model (r) to predict the values.
+```{r validate_predicated_values, echo = TRUE}
+
+# compute the predicted ratings
+predicted_ratings = r$predict(validation_set_new, out_memory())
+# remove any ratings > 5
+predicted_ratings <- ifelse(predicted_ratings > 5, 5, predicted_ratings)
+
+```
+
+Finally, we'll add it to the table.
+```{r final_rmse_result, echo = TRUE}
+
+model_validation <- RMSE(validation$rating, predicted_ratings)
+rmse_results <- bind_rows(rmse_results, 
+  tibble("Method"="Validation Matrix Factorization (recosystem)", 
+  RMSE = model_validation, "Diff. from Target" = RMSE - target))
+
+```
 
 # Conclusions
 The fact that the majority of users seem to rate movies during one session and then stop, indicates that we don't know very much about those users and their long-term viewing behavior. Additional information, which Netflix, surely has such as actual viewing patters would seem to be more predictive in understanding what these users would like to see in thier suggestion queue.
+Some predictions create ratings > 5 which isn't possible. I've removed these, but it wasn't a big impact on the results.
+
+# Resources
+http://re-design.dimiter.eu/?p=767
+https://towardsdatascience.com/recommendation-systems-in-the-real-world-51e3948772f3
+https://builtin.com/data-science/recommender-systems
+https://medium.com/swlh/recommendation-system-for-movies-movielens-grouplens-171d30be334e
+For examples of how to bin data and create box plots:
+https://www.r-graph-gallery.com/268-ggplot2-boxplot-from-continuous-variable.html
+http://adv-r.had.co.nz/Subsetting.html # a nice summary of subsetting
+
+Matrix factorization resources:
+https://methods.sagepub.com/dataset/howtoguide/collaborative-filtering-in-steam-2017 # a hands on example of the recosystem matrix factorization approach
+https://cran.r-project.org/web/packages/recosystem/recosystem.pdf # documentation for recosystem library
+https://statr.me/2016/07/recommender-system-using-parallel-matrix-factorization/ #recosystem lead maintainer blog
+https://cran.r-project.org/web/packages/recosystem/vignettes/introduction.html # an explanation of the recosystem library by Yixuan Qiu, an author of the recosystem and the maintainer
+
+# a step by step example of the recosystem library
+https://rpubs.com/vsi/movielens # a prior submission for this  assessment that used the recosystem
+
+https://rdrr.io/cran/recosystem/man/tune.html # an explantion of tuning parameters
+
+# another example of using recosystem
+https://courses.edx.org/asset-v1:ColumbiaX+BAMM.104x+1T2020+type@asset+block/recommender1.nb.html#
+
+
