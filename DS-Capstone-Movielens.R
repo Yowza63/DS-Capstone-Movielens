@@ -10,6 +10,8 @@
 #  SETUP: Load the libraries needed for the data exploration and model fitting
 # ---------------------------------------------------------------------------------------------------------------
 
+# Data manipulation tools
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
 # Data science tools
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 # Streamlines model training process for complex regression and classification problems
@@ -20,8 +22,6 @@ if(!require(stringi)) install.packages("stringi", repos = "http://cran.us.r-proj
 if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
 # Graphing tools
 if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
-# Data manipulation tools
-if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
 # Working with dates
 if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 # Data exploration
@@ -32,6 +32,8 @@ if(!require(hrbrthemes)) install.packages("hrbrthemes", repos = "http://cran.us.
 if(!require(sur)) install.packages("sur", repos = "http://cran.us.r-project.org")
 # Matrix factoization tool
 if(!require(recosystem)) install.packages("recosystem", repos = "http://cran.us.r-project.org")
+# Needed to create datasets
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
 
 # ---------------------------------------------------------------------------------------------------------------
 #  STEP 1: Create the Datasets
@@ -44,17 +46,14 @@ if(!require(recosystem)) install.packages("recosystem", repos = "http://cran.us.
 
 # If previously run, we'll load the data from files
 if (file.exists("movielens_training_data.rds") == TRUE){
+  
   # Read in the previously processed and stored datasets
   edx <- readRDS("movielens_training_data.rds")
   validation <- readRDS("movielens_validation_data.rds")
+  
   # Otherwise the download process will run taking several minutes
 } else {
-  
-  # Load the needed libraries for this step
-  if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-  if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-  if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
-  
+
   # For reference the urls for the MovieLens 10M dataset:
   # https://grouplens.org/datasets/movielens/10m/
   # http://files.grouplens.org/datasets/movielens/ml-10m.zip
@@ -88,7 +87,7 @@ if (file.exists("movielens_training_data.rds") == TRUE){
   temp <- movielens[test_index,]
   
   # Use semi_join() to remove users from temp (soon to be the validation set) that are not in edx. This results
-  # in removing 8 rows. The rationale is that we are trying to predict how user's will rate movies so we want to 
+  # in removing 8 rows. The rationale is that we are trying to predict how users will rate movies so we want to 
   # build a model with data for specific users and then try that out on movies that user has rated in the 
   # validation set. So the users in the validation set need to all be in the test set.
   # The semi_join function keeps the rows x (temp) that have movieId and userId's that match items in y (edx)
@@ -107,7 +106,7 @@ if (file.exists("movielens_training_data.rds") == TRUE){
   saveRDS(edx, 'movielens_training_data.rds')
   saveRDS(validation, 'movielens_validation_data.rds')
   
-  # removes elements used to create needed data
+  # removes elements from the environment used just to create needed data
   rm(dl, ratings, movies, test_index, temp, movielens, removed)
 }    
 
@@ -118,16 +117,11 @@ if (file.exists("movielens_training_data.rds") == TRUE){
 # Confirm there are no "NA" values in the data using the apply function with the 2 argument for columns
 apply(apply(edx, 2, is.na), 2, sum)
 
-# Examine the structure of edx
+# Examine the structure of edx and validation
 str(edx)
 str(validation)
 
-# Number of rows and columns
-dim(edx)
-dim(validation)
-
-# Columns, shows there are 6 columns in the dataset
-colnames(edx)
+# Create a summary for edx
 summary(edx)
 
 # Range of ratings, shows a tendency towards higher ratings
@@ -183,15 +177,14 @@ edx %>% group_by(userId) %>%
   summarize(users_100_or_less = length(n[n <= 100])/length(n)) %>% 
   pull(users_100_or_less)
 
-# What portion of ratings are associated with users rating 100 or fewer movies? Only 10%, so 43% of users
-# represent just 10% of the total number of ratings
+# What portion of ratings are associated with users rating 100 or fewer movies? Only 23%, so 66% of users
+# represent just 23% of the total number of ratings
 edx %>% group_by(userId) %>% 
   summarize(n = n()) %>% 
   summarize(ratings_users_100_or_less = sum(n[n <=100])/sum(n)) %>% 
   pull(ratings_users_100_or_less)
 
-# Create a scatter plot of the data which shows outliers of users with large number of ratings and 
-# lower overall averages
+# Create a scatter plot of average user ratings and the number of movies they've rated
 edx %>% group_by(userId) %>% 
   summarize(n = n(), avg_per_user = sum(rating/n)) %>%
   ggplot(aes(avg_per_user, n)) + geom_point() + 
@@ -228,25 +221,25 @@ edx %>% group_by(userId) %>%
 # of the data by number of ratings and create a boxplot for each bin. The plot shows that the largest population
 # of users are those who only rate a few movies and these users tend to have higher ratings.
 
-# mannual method of finding the bins to create the labels
+# manual method of finding the bins to create the labels
 c <- edx %>% group_by(userId) %>%
   summarize(n = n(), avg_per_user = sum(rating)/n) %>% 
   filter(n <= 1000) %>%
   mutate(bin = binning(n, nbins = 10, type = "equal"))
 
-# show the bins and the number of user's in each bin
+# show the bins and the number of users in each bin
 knitr::kable(table(c$bin), format="markdown", digits = 3)
 knitr::kable(percent.table(c$bin), format="markdown", digits = 1)
 
-# create a chart showing a boxplot for every bin - shows the tendency toward lower ratings as user's rate more movies
+# create a chart showing a boxplot for every bin - shows the tendency toward lower ratings as users rate more movies
 edx %>% group_by(userId) %>% 
   summarize(n = n(), avg_per_user = sum(rating)/n) %>% # create the metrics for each user
-  filter(n <= 1000) %>% # remove the outliers of user's with thousands of ratings
+  filter(n <= 1000) %>% # remove the outliers of users with thousands of ratings
   mutate(bin = binning(n, nbins = 10, type = "equal")) %>% # create 10 bins for 1-1000 ratings
   ggplot(aes(x=bin, y=avg_per_user) ) + # plot the bins
   geom_boxplot(fill="#69b3a2") + # add green to the boxplots
   theme_ipsum() + # format for the graph
-  geom_jitter(width = .2, alpha = .1) + 
+  geom_jitter(width = .2, alpha = .01) + 
   ylab("Average Rating Per User") + 
   labs(title = "Binned Users by Number of Movies Rated", subtitle = "Excludes Users with > 1000 Ratings") + 
   # format the fonts and size of the labels
@@ -257,7 +250,7 @@ edx %>% group_by(userId) %>%
                                                    "505-604", "604-703", "703-802", "802-901", "901-1000"))
 
 # ---------------------------------------------------------------------------------------------------------------
-#  STEP 2b: Explore the timing of when user's rated movies (timestamp)
+#  STEP 2b: Explore the timing of when users rated movies (timestamp)
 # ---------------------------------------------------------------------------------------------------------------
 
 # Use timestamp field to create a date of first rating and date of last rating for each distinct user and 
@@ -268,13 +261,13 @@ edx_time <- edx %>%
        avg_per_user = sum(rating)/n) %>% 
   mutate(last_rating_date = max(timestamp), first_rating_date = min(timestamp)) %>% # add first and last date 
   select(-timestamp) %>% # drop the timestamp column as it's no longer needed
-  distinct() %>% # remove duplidate rows
+  distinct() %>% # remove duplicate rows
   mutate(time_rating = difftime(last_rating_date, first_rating_date, units=c("secs"))) # length of time rating
 
 # confirm the number of rows in edx_time is equal to the distinct number of users
 n_distinct(edx$userId) == n_distinct(edx$userId)
 
-# Show the time versus cumulative distribution for the length of time user's have been rating movies
+# Show the time versus cumulative distribution for the length of time users have been rating movies
 edx_time %>% 
   ggplot(aes(x=as.numeric(time_rating/(60*24*60)))) + 
   stat_ecdf() +
@@ -304,7 +297,7 @@ newtmp %>% ggplot(aes(x=tmp, y=avg_per_user) ) + # plot the buckets
   geom_boxplot(fill="#69b3a2") + # add green to the boxplots
   theme_ipsum() + # format for the graph
   ylab("Average Rating Per User") + 
-  labs(title = "Span of Time User's Rated Movies") + 
+  labs(title = "Span of Time Users Rated Movies") + 
   # format the fonts and size of the labels
   theme(axis.text.x = element_text(face="plain", color="black", size=8, angle=45), 
         plot.title = element_text(size = 14), plot.subtitle = element_text(size = 10)) + 
@@ -318,7 +311,7 @@ newtmp %>% group_by(tmp) %>% summarize(avg = mean(avg_per_user))
 #  STEP 2c:  Explore movie specific effects, movieId
 # ---------------------------------------------------------------------------------------------------------------
 
-# The distribution of average ratings is skewed right
+# The distribution of average movie ratings is left skewed
 edx %>% group_by(movieId) %>% summarize(n = n(), avg_rating = sum(rating)/n) %>% 
   ggplot(aes(avg_rating)) + 
   geom_histogram(binwidth = .2, fill = "#69b3a2", col = "black") + 
@@ -327,8 +320,12 @@ edx %>% group_by(movieId) %>% summarize(n = n(), avg_rating = sum(rating)/n) %>%
   labs(title = "Average Ratings Across Movies") + 
   theme_ipsum()
 
-# The scatterplot of average ratings and volumne of ratings (n) shows a positive relationship between 
-# number of ratings and average ratings. It also shows a large number of movies with very few ratings 
+# The scatterplot of average ratings and volume of ratings (n) shows a positive relationship between 
+# number of ratings for a movie and it's overall average ratings. It also shows a large number of movies with 
+# very few ratings 
+edx_movies <- edx %>% group_by(movieId) %>%
+  summarize(n = n(), avg_rating = sum(rating)/n)
+
 edx_movies %>%
   ggplot(aes(x = n, y = avg_rating)) + 
   geom_point() + 
@@ -353,7 +350,7 @@ n_distinct(edx$genres)
 # Find the most popular genres
 edx %>% group_by(genres) %>% summarize(n = n()) %>% arrange(desc(n)) %>% head(10)
 
-# Find the distinct genres
+# The genres given are combinations of specific categories. Create a list of just those.
 genres <- str_split(edx$genres, "\\|") %>% flatten_chr() %>% stri_unique()
 
 # Show the distinct genres with frequency
@@ -363,7 +360,7 @@ sapply(genres, function(g) {
   sort(decreasing = TRUE) %>%
   knitr::kable(., "simple", col.names = "Number of Ratings", format.args = list(big.mark = ","))
 
-# Explore the average rating per genre. Create a histogram of genres by average rating or boxplots?
+# Explore the average rating per genre. Some genres are more popular than others.
 edx %>% group_by(genres) %>%
   summarize(n = n(), avg = mean(rating)) %>%
   filter(n >= 1000) %>% # remove outliers of infrequently rated movies
@@ -440,6 +437,7 @@ RMSE(predicted_ratings, test_set$rating)
 movie_effects <- RMSE(predicted_ratings, test_set$rating)
 rmse_results <- bind_rows(rmse_results, 
       tibble("Method" = "Movie Effect Model", RMSE = movie_effects, "Diff. from Target" = RMSE - target))
+rmse_results
 
 # MODEL 3:  Combine the movie effect and a user effect
 # First create a data set of the user specific effects defined as the overall avg rating for that 
@@ -465,6 +463,7 @@ user_bias <- RMSE(predicted_ratings, test_set$rating)
 # Add the results to our table
 rmse_results <- bind_rows(rmse_results, 
    tibble("Method" = "Movie and User Effects", RMSE = user_bias, "Diff. from Target" = RMSE - target))
+rmse_results
 
 # ---------------------------------------------------------------------------------------------------------------
 #  STEP 3b: Regularization, MODEL 4
@@ -527,7 +526,7 @@ qplot(lambdas, rmses)
 lambda <- lambdas[which.min(rmses)]
 lambda
 
-# Compute the predicted ratings using the final optimized lamda 
+# Compute the predicted ratings using the final optimized lambda 
 mu <- mean(train_set$rating)
 
 # movie effect scaled by lamdba
@@ -605,21 +604,12 @@ opts = r$tune(train_set_new, opts = list(
   ))
 opts
 
-# Save the best opts (min) to avoid running this lenthy code in the rmarkdown report
-best_opts <- list(
-  dim = 30, 
-  costp_l1 = 0,
-  costp_l2 = .01,
-  costq_l1 = 0,
-  costq_l2 = .1,
-  lrate = .1,
-  loss_fun = 0.8061911)
-
 # train the model using the best tuning parameters
 r$train(train_set_new, opts = c(opts$min, nthread = 1, niter = 20))
 
 # calculate the predicted values
 predicted_ratings = r$predict(test_set_new, out_memory())
+
 # Reset ratings which are >5 to 5 as that is the highest possible rating
 predicted_ratings <- ifelse(predicted_ratings > 5, 5, predicted_ratings)
 
@@ -628,6 +618,9 @@ model_matrix_factorization <- RMSE(test_set$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results, 
     tibble("Method" = "Matrix Factorization (recosystem)", RMSE = model_matrix_factorization,
     "Diff. from Target" = RMSE - target))
+# Show a fancy table of the results
+knitr::kable(rmse_results, "html") %>%
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
 
 # ---------------------------------------------------------------------------------------------------------------
 # STEP 4: Final assessment using the validation data set
@@ -645,4 +638,8 @@ model_validation <- RMSE(validation$rating, predicted_ratings)
 rmse_results <- bind_rows(rmse_results, 
   tibble("Method"="Validation Matrix Factorization (recosystem)", 
   RMSE = model_validation, "Diff. from Target" = RMSE - target))
+
+# Show a fancy table of the results
+knitr::kable(rmse_results, "html") %>%
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
 
